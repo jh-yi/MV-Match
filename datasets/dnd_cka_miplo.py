@@ -12,12 +12,13 @@ class MiPlo(ImageList):
     }
     CLASSES = ['-N', '-P', '-K', '-B', '-S', 'control']
 
-    def __init__(self, root: str, task: str, split: Optional[str] = 'train', download: Optional[bool] = False, **kwargs):
+    def __init__(self, root: str, task: str, split: Optional[str] = 'train', download: Optional[bool] = False, resize_size=224, **kwargs):
         assert task in self.image_list
         assert split in ['train', 'test']
 
-        list_name = "image_list"
-        data_list_file = os.path.join(root, list_name, "{}_{}.txt".format(self.image_list[task], split))
+        self.resize_size = resize_size
+        self.resize_size_nmi = 224 # for computing image-level similarity efficiently
+        data_list_file = os.path.join(root, "image_list", "{}_{}.txt".format(self.image_list[task], split))
         print("loading {}".format(data_list_file))
 
         super(MiPlo, self).__init__(root, MiPlo.CLASSES, data_list_file=data_list_file, **kwargs)

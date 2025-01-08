@@ -52,7 +52,6 @@ class ImageClassifier(Classifier):
 def main(args: argparse.Namespace):
 
     t_start = time.time()
-    log_source(args.log) 
     logger = CompleteLogger(args.log, args.phase)
     print("---------------- start ----------------\n", datetime.datetime.now().strftime("%A %Y-%m-%d %H:%M:%S"), "\n---------------------------------------")
     print('Hostname: ', os.uname()[1])
@@ -72,27 +71,33 @@ def main(args: argparse.Namespace):
     cudnn.benchmark = True
 
     # Data loading code
-    weak_augment = utils.get_train_transform(args.train_resizing, scale=args.scale, ratio=args.ratio, ## !
-                                             random_horizontal_flip=not args.no_hflip,
-                                             random_color_jitter=False, resize_size=args.resize_size,
-                                             norm_mean=args.norm_mean, norm_std=args.norm_std)
-    strong_augment = utils.get_train_transform(args.train_resizing, scale=args.scale, ratio=args.ratio, ## !
+    weak_augment = utils.get_train_transform(args.train_resizing, 
+                                             scale=args.scale, 
+                                             ratio=args.ratio, 
+                                             random_horizontal_flip=not args.no_hflip, 
+                                             random_color_jitter=False, 
+                                             resize_size=args.resize_size, 
+                                             norm_mean=args.norm_mean, 
+                                             norm_std=args.norm_std)
+    strong_augment = utils.get_train_transform(args.train_resizing, 
+                                               scale=args.scale, 
+                                               ratio=args.ratio,
                                                random_horizontal_flip=not args.no_hflip,
-                                               random_color_jitter=False, resize_size=args.resize_size,
-                                               norm_mean=args.norm_mean, norm_std=args.norm_std,
+                                               random_color_jitter=False, 
+                                               resize_size=args.resize_size,
+                                               norm_mean=args.norm_mean, 
+                                               norm_std=args.norm_std,
                                                auto_augment=args.auto_augment)
     train_source_transform = MultipleApply([weak_augment, strong_augment])
     train_target_transform = train_source_transform
-    val_transform = utils.get_val_transform(args.val_resizing, resize_size=args.resize_size,
-                                            norm_mean=args.norm_mean, norm_std=args.norm_std)
+    val_transform = utils.get_val_transform(args.val_resizing, resize_size=args.resize_size, norm_mean=args.norm_mean, norm_std=args.norm_std)
 
-    print("train_source_transform: ", train_source_transform)
-    print("train_target_transform: ", train_target_transform)
-    print("val_transform: ", val_transform)
+    # print("train_source_transform: ", train_source_transform)
+    # print("train_target_transform: ", train_target_transform)
+    # print("val_transform: ", val_transform)
 
     train_source_dataset, train_target_dataset, val_dataset, test_dataset, num_classes, args.class_names = \
-        utils.get_dataset(args.data, args.root, args.source, args.target, train_source_transform, val_transform,
-                          train_target_transform=train_target_transform, method=args.log.split('/')[-2], sample=args.sample)
+        utils.get_dataset(args.data, args.root, args.source, args.target, train_source_transform, val_transform, train_target_transform, method=args.log.split('/')[-2], sample=args.sample, resize_size=args.resize_size)
     train_source_loader = DataLoader(train_source_dataset, batch_size=args.batch_size,
                                      shuffle=True, num_workers=args.workers, drop_last=True)
     train_target_loader = DataLoader(train_target_dataset, batch_size=args.unlabeled_batch_size,
@@ -156,6 +161,7 @@ def main(args: argparse.Namespace):
     print("---------------- end ----------------\n", datetime.datetime.now().strftime("%A %Y-%m-%d %H:%M:%S"), "\n---------------------------------------")
     print("Elapsed time: {:.1f}h".format((time.time()-t_start)/60))
 
+# @profile
 def train(train_source_iter: ForeverDataIterator, train_target_iter: ForeverDataIterator,
           model: ImageClassifier, optimizer: SGD, lr_scheduler: LambdaLR, epoch: int, args: argparse.Namespace):
     batch_time = AverageMeter('Time', ':5.2f')
@@ -173,7 +179,7 @@ def train(train_source_iter: ForeverDataIterator, train_target_iter: ForeverData
          pseudo_label_ratios],
         prefix="Epoch: [{}]".format(epoch))
 
-    self_training_criterion = ConfidenceBasedSelfTrainingLoss(args.threshold, args.use_soft_label).to(device)
+    self_training_criterion = utils.ConfidenceBasedSelfTrainingLoss(args.threshold, args.use_soft_label).to(device)
     # switch to train mode
     model.train()
 
@@ -284,7 +290,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='MV-Match')
     # dataset parameters
     parser.add_argument('root', metavar='DIR',
-                        help='root path of dataset')
+                        help='root path of dataset lists')
     parser.add_argument('-d', '--data', metavar='DATA', default='MiPlo', choices=utils.get_dataset_names(),
                         help='dataset: ' + ' | '.join(utils.get_dataset_names()) +
                              ' (default: MiPlo)')

@@ -46,7 +46,7 @@ def get_dataset_names():
     ) + ['Digits']
 
 
-def get_dataset(dataset_name, root, source, target, train_source_transform, val_transform, train_target_transform=None, method='', sample=''):
+def get_dataset(dataset_name, root, source, target, train_source_transform, val_transform, train_target_transform=None, method='', sample='', resize_size=224):
     if train_target_transform is None:
         train_target_transform = train_source_transform
     if dataset_name in datasets.__dict__:
@@ -55,17 +55,13 @@ def get_dataset(dataset_name, root, source, target, train_source_transform, val_
 
         def concat_dataset(tasks, start_idx, **kwargs):
             # return ConcatDataset([dataset(task=task, **kwargs) for task in tasks])
-            return MultipleDomainsDataset([dataset(task=task, **kwargs) for task in tasks], tasks,
-                                          domain_ids=list(range(start_idx, start_idx + len(tasks))))
+            return MultipleDomainsDataset([dataset(task=task, **kwargs) for task in tasks], tasks, domain_ids=list(range(start_idx, start_idx + len(tasks))))
 
-        train_source_dataset = concat_dataset(root=root, tasks=source, download=True, transform=train_source_transform,
-                                              start_idx=0, is_train=True, method=method)
-        train_target_dataset = concat_dataset(root=root, tasks=target, download=True, transform=train_target_transform,
-                                              start_idx=len(source), is_train=True, method=method)
-        val_dataset = concat_dataset(root=root, tasks=target, download=True, transform=val_transform,
-                                     start_idx=len(source), is_train=False, method=method)
+        train_source_dataset = concat_dataset(root=root, tasks=source, download=True, transform=train_source_transform, start_idx=0, is_train=True, method=method, sample=sample, resize_size=resize_size)
+        train_target_dataset = concat_dataset(root=root, tasks=target, download=True, transform=train_target_transform, start_idx=len(source), is_train=True, method=method, sample=sample, resize_size=resize_size)
+        val_dataset = concat_dataset(root=root, tasks=target, download=True, transform=val_transform, start_idx=len(source), is_train=False, method=method, sample=sample, resize_size=resize_size)
         if dataset_name=='MiPlo' or dataset_name == 'DomainNet':
-            test_dataset = concat_dataset(root=root, tasks=target, split='test', download=True, transform=val_transform, start_idx=len(source), is_train=False, method=method)
+            test_dataset = concat_dataset(root=root, tasks=target, split='test', download=True, transform=val_transform, start_idx=len(source), is_train=False, method=method, sample=sample, resize_size=resize_size)
         else:
             test_dataset = val_dataset
         class_names = train_source_dataset.datasets[0].classes

@@ -11,7 +11,9 @@ import random
 from sklearn import metrics as mr
 import numpy as np
 import pickle as pkl
-from pathlib import Path
+import json
+from PIL import Image
+import time
 
 class ImageList(datasets.VisionDataset):
     """A generic Dataset class for image classification
@@ -48,30 +50,29 @@ class ImageList(datasets.VisionDataset):
         self.is_train = is_train
         self.method = method
         self.sample = sample
+        print("Loading {} samples: ".format(len(self.samples)))
 
-        if 'miplov2' in root or 'miplov3' in root:
+        if 'miplo' in root:
             self.loader = self.cache_loader
-
-            project_root = Path(__file__).resolve().parents[1]
-            folder_name = 'dnd_cka_miplov{}'.format('2' if 'miplov2' in root else '3')
-
-            # metadata
-            prepro_metadata_path = os.path.join(project_root, 'data', folder_name, 'prepro_metadata.pkl')  
-            with open(prepro_metadata_path, 'rb') as f:
-                self.prepro_metadata = pkl.load(f)
-            
-            folder_name = 'dnd_cka_miplov{}'.format('3' if 'miplov2' in root else '2')
-            prepro_metadata_path = os.path.join(project_root, 'data', folder_name, 'prepro_metadata.pkl')  
-            with open(prepro_metadata_path, 'rb') as f:
-                tmpt = pkl.load(f)
-            # self.prepro_metadata = self.prepro_metadata | tmpt    # python>3.9
-            self.prepro_metadata = {**self.prepro_metadata, **tmpt} # python>3.5
-
-            print("Loading pre-processed metadata: ".ljust(40), prepro_metadata_path, ': ', len(self.prepro_metadata)-1) # -1 cuz prepro_metadata['dates']
-
             self.possible_views = {}
             self.pair_dist = {}
             
+            metadata_path = os.path.join(root, 'metadata.json')  
+            with open(metadata_path, 'r') as f:
+                self.metadata = json.load(f)
+            # print("Loading pre-processed metadata: ".ljust(40), metadata_path, ': ', len(self.metadata))
+
+            self.cache_path = os.path.join(os.environ['DATA_ROOT'], "cache", str(self.resize_size))
+            if not os.path.exists(self.cache_path):
+                os.makedirs(os.path.join(self.cache_path, "MiPlo-B"), exist_ok=True)
+                os.makedirs(os.path.join(self.cache_path, "MiPlo-WW"), exist_ok=True)
+                print("Creating cache dir for resolution: ", self.resize_size)
+            self.cache_path_nmi = os.path.join(os.environ['DATA_ROOT'], "cache", str(self.resize_size_nmi))
+            if not os.path.exists(self.cache_path_nmi):
+                os.makedirs(os.path.join(self.cache_path_nmi, "MiPlo-B"), exist_ok=True)
+                os.makedirs(os.path.join(self.cache_path_nmi, "MiPlo-WW"), exist_ok=True)
+                print("Creating cache dir for resolution: ", self.resize_size_nmi)
+
     def __getitem__(self, index: int) -> Tuple[Any, int]:
         """
         Args:
@@ -79,10 +80,10 @@ class ImageList(datasets.VisionDataset):
             return (tuple): (image, target) where target is index of the target class.
         """
 
-        # single source & single target
+        path, target = self.samples[index]
+        img = self.loader(path)
+
         if self.method != 'mv-match' or (not self.is_train):
-            path, target = self.samples[index]
-            img = self.loader(path)
             if self.transform is not None:
                 img = self.transform(img)
             if self.target_transform is not None and target is not None:
@@ -91,31 +92,29 @@ class ImageList(datasets.VisionDataset):
         
         # multiple views
         else:
-            path, target = self.samples[index]
-            img = self.loader(path)
-
-            # 1. create subsample dict: a pool of most dissimilar views for each query
+            # 1. create a subsample dict: a pool of most dissimilar views for each query
             n_possible = 5
             n_view = 1 # default=1, #views for each query image, TODO: support n_view > 1
-            img_name = path.split('/')[-1][:-4]+'.jpg'
-            if not self.possible_views.get(img_name): 
-                multi_view_names = [key for key, value in self.prepro_metadata.items() if (type(value)==dict and value.get('date') and value['date']==self.prepro_metadata[img_name]['date'] and value['idx']==self.prepro_metadata[img_name]['idx'] and value['genotype']==self.prepro_metadata[img_name]['genotype'] and key!=img_name)]
+            img_name = path.split('/')[-1]
+            if not self.possible_views.get(img_name):
+                multi_view_names = [key for key, value in self.metadata.items() if (type(value)==dict 
+                                                                                    and value.get('date') 
+                                                                                    and value['date']==self.metadata[img_name]['date'] 
+                                                                                    and value['idx']==self.metadata[img_name]['idx'] 
+                                                                                    and value['genotype']==self.metadata[img_name]['genotype'] 
+                                                                                    and key!=img_name)]
 
                 if self.sample == 'mutual':
                     # compute nmi list from scratch
-                    target_size = 224 # for computing image-level similarity
-                    im1 = self.loader(path.replace('/1344/', '/{}/'.format(target_size)))
-                    im1 = np.array(im1)
-                    im1 = im1[:, :, ::-1]
+                    im1 = self.loader(path, self.resize_size_nmi)
+                    im1 = np.array(im1)[:, :, ::-1]
                     nmi_list = []
                     for im2_name in multi_view_names:
                         combined_name = img_name+im2_name if img_name<im2_name else im2_name+img_name
 
                         if not self.pair_dist.get(combined_name):
-                            path2 = path.replace(img_name[:-4], im2_name[:-4])
-                            im2 = self.loader(path2.replace('/1344/', '/{}/'.format(target_size)))
-                            im2 = np.array(im2)
-                            im2 = im2[:, :, ::-1].copy()
+                            im2 = self.loader(path.replace(img_name, im2_name), self.resize_size_nmi)
+                            im2 = np.array(im2)[:, :, ::-1]
 
                             # nmi: smaller = more dissimilar [nmi: normalized mutual information] 
                             self.pair_dist[combined_name] = mr.normalized_mutual_info_score(im1.reshape(-1), im2.reshape(-1))       
@@ -130,30 +129,25 @@ class ImageList(datasets.VisionDataset):
 
                 elif self.sample == 'random':
                     self.possible_views[img_name] = random.sample(multi_view_names, min(n_possible, len(multi_view_names)))
+                
                 else:
                     raise NotImplementedError
+            
             multi_view_names = self.possible_views[img_name]
             # print(len(multi_view_names))
 
-            # 2. sample = random
+            # 2. randomly sample n_view from the subsample set
             sampled_views = random.sample(multi_view_names, n_view)
 
             img2_name = sampled_views[0]
-            img2 = self.loader(path.replace(img_name[:-4], img2_name[:-4]))
+            img2 = self.loader(path.replace(img_name, img2_name))
             if self.transform is not None:
                 img = self.transform(img)
                 img2 = self.transform(img2)
             if self.target_transform is not None and target is not None:
                 target = self.target_transform(target)
-                
-            # TODO: support n_view > 1
-            # img3_name = sampled_views[1]
-            # img3 = self.loader(path.replace(img_name[:-4], img3_name[:-4]))
-            # if self.transform is not None:
-            #     img3 = self.transform(img3)
 
             return (img, img2), target
-            # return (img, img2, img3), target
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -170,9 +164,7 @@ class ImageList(datasets.VisionDataset):
             for line in f.readlines():
                 split_line = line.split()
                 target = split_line[-1]
-                path = ' '.join(split_line[:-1])
-                if not os.path.isabs(path):
-                    path = os.path.join(self.root, path)
+                path = split_line[0]
                 target = int(target)
                 data_list.append((path, target))
         return data_list
@@ -187,12 +179,21 @@ class ImageList(datasets.VisionDataset):
         """All possible domain in this dataset"""
         raise NotImplemented
     
-    def cache_loader(self, path: str) -> Any:
-        # load cache files instead of raw images for acceleration
-        if "/home/user" in os.getcwd():
-            path = path.replace("/home/yij", "/home/user")
-        with open(path, 'rb') as f:
-            img = pkl.load(f)
+    def cache_loader(self, path, resize_size=None) -> Any:
+
+        resize_size = resize_size or self.resize_size
+
+        # load cache files instead of raw images for acceleration    
+        pkl_path = os.path.join(os.environ['DATA_ROOT'], "cache", str(resize_size), path[:-4]+'.pkl')
+        if os.path.exists(pkl_path):
+            with open(pkl_path, 'rb') as f:
+                img = pkl.load(f)
+        else:
+            img_path = os.path.join(os.environ['DATA_ROOT'], "images", path)
+            img = Image.open(img_path).convert('RGB')
+            img = img.resize((resize_size, resize_size), Image.BILINEAR)
+            with open(pkl_path, 'wb') as f:
+                pkl.dump(img, f)
         return img
 
 class MultipleDomainsDataset(Dataset[T_co]):
