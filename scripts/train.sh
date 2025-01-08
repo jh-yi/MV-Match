@@ -5,7 +5,7 @@ export DATA_ROOT=/home/yij/remote_home/datasets/MiPlo
 
 SOURCE_DATASET=B    # B | H | J | M
 TARGET_DATASET=H    # B | H | J | M
-SUFFIX=''
+SUFFIX='hard'
 LOG_DIR=MiPlo_${SOURCE_DATASET}_${TARGET_DATASET}_${SUFFIX}
 #################################################################
 

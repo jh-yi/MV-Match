@@ -56,7 +56,14 @@ Please download the **MiPlo** datasets from [Huggingface](https://huggingface.co
 
 Note: We provide the raw images with resolution of 7296x5472 (5472x7296). The first epoch of training (and validation) might be slow due to loading high-resolution images. For acceleration, we also provide the resized images as pickle files with resolution of 1344x1344 & 224x224 (this is optional, if you don't download the cache dir, the raw images will be loaded, resized, and saved as pickle files in the first epoch as well).
 
-After downloading, organize the data as follows:
+After downloading, extract the files with:
+```bash
+cat images.tar.gz.* > images.tar.gz
+tar -zxvf images.tar.gz
+cat cache.tar.gz.* > cache.tar.gz
+tar -zxvf cache.tar.gz
+```
+and organize the data as follows:
 ```
 MiPlo
 ├── images
